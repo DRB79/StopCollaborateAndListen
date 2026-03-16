@@ -1,4 +1,4 @@
-<!doctype html>
+  <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -82,7 +82,14 @@
   // PASSWORD WALL SETTINGS
   // =========================
   // CHANGE THIS to your shared password:
-  const ACCESS_PASSWORD = "Gershwin's-Collarbone88";
+  const ACCESS_PASSWORD = "juT244D=5xnIdE7@2kZhhYh4p9Blt8c4@6Jqvme63xUdkwW39F";
+
+  // CHANGE THIS to match DOWNLOAD_API_KEY in backend_server.py exactly:
+  const DOWNLOAD_API_KEY = "juT244D=5xnIdE7@2kZhhYh4p9Blt8c4@6Jqvme63xUdkwW39F";
+
+  // Change this later to your permanent Cloudflare hostname:
+  // const BACKEND_BASE_URL = "https://books.slclibrary.com";
+  const BACKEND_BASE_URL = "http://127.0.0.1:8123";
 
   // If set, login persists until you clear browser data (recommended for your use-case).
   const PERSIST_KEY = "abl_access_ok";
@@ -90,6 +97,7 @@
   function hasAccess() {
     try { return localStorage.getItem(PERSIST_KEY) === "1"; } catch(e) { return false; }
   }
+
   function grantAccess() {
     try { localStorage.setItem(PERSIST_KEY, "1"); } catch(e) {}
   }
@@ -121,7 +129,6 @@
     if (entered === ACCESS_PASSWORD) {
       grantAccess();
       showApp();
-      // start the app after unlock
       startApp();
     } else {
       gateStatus.textContent = "Incorrect.";
@@ -138,7 +145,6 @@
     }
   });
 
-  // If already authenticated, skip the gate
   if (hasAccess()) {
     showApp();
     startApp();
@@ -146,15 +152,10 @@
     showGate("");
   }
 
-  // =========================
-  // APP CODE (unchanged core)
-  // =========================
   function startApp() {
     // ---------- Dropbox CSV URL ----------
-    // Using the direct raw domain works best for iOS fetch.
     const DROPBOX_CSV_URL =
       "https://dl.dropboxusercontent.com/scl/fi/dn97ausyuzcpck30mgn7r/audiobooks.csv?rlkey=jtirb9npkwoll9xpn0vgdtcjg&st=hgkkigmx&dl=1";
-const BACKEND_BASE_URL = "http://127.0.0.1:8123";
 
     // Elements
     const loadBtn = document.getElementById('loadBtn');
@@ -195,7 +196,6 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
         if (isLocalhost()) return "Local server: ./audiobooks.csv";
         return "Dropbox: audiobooks.csv";
       }
-      // file://
       if (isIOS()) return "Dropbox: audiobooks.csv";
       return "Manual picker required (file://)";
     }
@@ -206,7 +206,7 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
     let ALL_HEADERS = [];
     let ALL_ROWS = [];
 
-    // Indices for fast lookup (Request button)
+    // Indices for fast lookup
     let IDX_BOOKID = -1;
     let IDX_AUTHOR = -1;
     let IDX_TITLE  = -1;
@@ -214,7 +214,6 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
     // Display map: { srcIndex, cells, rawLower }
     let DISPLAY_MAP = [];
 
-    // Desired columns
     const DESIRED_COLUMNS = [
       "Author",
       "CategoryOrSeries",
@@ -226,8 +225,9 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
       "Duration"
     ];
 
-    // ---------- Loading ----------
-    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+    function sleep(ms) {
+      return new Promise(r => setTimeout(r, ms));
+    }
 
     async function fetchTextWithRetry(url) {
       const attempts = 12;
@@ -244,16 +244,15 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
           await sleep(delayMs);
         }
       }
+
       throw lastErr || new Error("Unknown fetch error");
     }
 
     async function loadFromAutoTarget() {
-      // Allow iOS even in file://, because it can still fetch HTTPS.
       if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') {
         if (!isIOS()) {
           throw new Error("This page is not running over HTTP/HTTPS. Auto-load is blocked when opened as file:///.");
         }
-        // iOS file:/// mode: still fetch Dropbox CSV
         return await fetchTextWithRetry(DROPBOX_CSV_URL);
       }
 
@@ -280,7 +279,6 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
       const indexByName = new Map();
       headers.forEach((h, i) => indexByName.set(h, i));
 
-      // Required for request system
       IDX_BOOKID = indexByName.has("BookId") ? indexByName.get("BookId") : -1;
       IDX_AUTHOR = indexByName.has("Author") ? indexByName.get("Author") : -1;
       IDX_TITLE  = indexByName.has("Title")  ? indexByName.get("Title")  : -1;
@@ -333,8 +331,9 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
 
         const partsIdx = DESIRED_COLUMNS.indexOf("Parts");
         const durIdx   = DESIRED_COLUMNS.indexOf("Duration");
+
         if (partsIdx >= 0) cells[partsIdx] = formatParts(cells[partsIdx]);
-        if (durIdx   >= 0) cells[durIdx]   = formatDurationHMS(cells[durIdx]);
+        if (durIdx >= 0) cells[durIdx] = formatDurationHMS(cells[durIdx]);
 
         const rawLower = cells.join(" \u001F ").toLowerCase();
         return { srcIndex, cells, rawLower };
@@ -363,7 +362,6 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
 
       statusEl.textContent = `Loaded ${DISPLAY_MAP.length} records. Enter a search term, or click “Browse all”.`;
 
-      // JAWS focus smoothing
       setTimeout(() => {
         searchInput.focus();
         statusEl.textContent = "Database loaded. Focus is on the Search box.";
@@ -385,7 +383,6 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
       }
     }
 
-    // bind once
     loadBtn.onclick = tryAutoLoad;
 
     fileInput.onchange = async () => {
@@ -401,10 +398,6 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
       }
     };
 
-    // Auto-attempt on app start
-    // - HTTP/HTTPS: always attempt
-    // - file:// on iOS: attempt (Dropbox/Safari viewer)
-    // - file:// elsewhere: show picker
     (function initialLoad() {
       const proto = window.location.protocol;
       if (proto === 'http:' || proto === 'https:') {
@@ -420,7 +413,6 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
       }
     })();
 
-    // ---------- Request download ----------
     function safeFileName(s) {
       return (s ?? "").toString()
         .replace(/[\\/:*?"<>|]+/g, "")
@@ -429,25 +421,62 @@ const BACKEND_BASE_URL = "http://127.0.0.1:8123";
         .slice(0, 160);
     }
 
-function startDownload(srcIndex) {
-  const row = ALL_ROWS[srcIndex];
+    async function startDownload(srcIndex) {
+      const row = ALL_ROWS[srcIndex];
 
-  const author = (row[IDX_AUTHOR] ?? "").toString().trim();
-  const title  = (row[IDX_TITLE]  ?? "").toString().trim();
-  const bookId = (row[IDX_BOOKID] ?? "").toString().trim();
+      const author = (row[IDX_AUTHOR] ?? "").toString().trim();
+      const title  = (row[IDX_TITLE]  ?? "").toString().trim();
+      const bookId = (row[IDX_BOOKID] ?? "").toString().trim();
 
-  if (!bookId) {
-    statusEl.textContent = "This book does not have a valid BookId.";
-    return;
-  }
+      if (!bookId) {
+        statusEl.textContent = "This book does not have a valid BookId.";
+        return;
+      }
 
-  statusEl.textContent =
-    `Preparing download for ${author} - ${title}. Large books may take a short while before the download begins.`;
+      statusEl.textContent =
+        `Preparing download for ${author} - ${title}. Large books may take a short while before the download begins.`;
 
-  window.location.href = `${BACKEND_BASE_URL}/download/${encodeURIComponent(bookId)}`;
-}
+      try {
+        const response = await fetch(
+          `${BACKEND_BASE_URL}/download/${encodeURIComponent(bookId)}`,
+          {
+            method: "GET",
+            headers: {
+              "X-Download-Key": DOWNLOAD_API_KEY
+            }
+          }
+        );
 
-    // ---------- Searching / Browsing ----------
+        if (!response.ok) {
+          throw new Error(`Download failed: HTTP ${response.status}`);
+        }
+
+        const blob = await response.blob();
+
+        let filename = `${safeFileName(author)} - ${safeFileName(title)}.zip`;
+        const disposition = response.headers.get("Content-Disposition");
+        if (disposition) {
+          const match = disposition.match(/filename="?([^"]+)"?/i);
+          if (match && match[1]) {
+            filename = match[1];
+          }
+        }
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        statusEl.textContent = `Download started for ${author} - ${title}.`;
+      } catch (err) {
+        statusEl.textContent = `Download failed for ${author} - ${title}. ${err.message}`;
+      }
+    }
+
     function applySearch() {
       const q = searchInput.value.trim().toLowerCase();
       if (!q) {
@@ -496,7 +525,6 @@ function startDownload(srcIndex) {
       }, 0);
     };
 
-    // ---------- Rendering ----------
     function renderHeaders() {
       headersRow.innerHTML = '';
       for (const h of DESIRED_COLUMNS) {
@@ -506,10 +534,10 @@ function startDownload(srcIndex) {
         headersRow.appendChild(th);
       }
 
-const thReq = document.createElement('th');
-thReq.textContent = "Download";
-thReq.scope = "col";
-headersRow.appendChild(thReq);
+      const thReq = document.createElement('th');
+      thReq.textContent = "Download";
+      thReq.scope = "col";
+      headersRow.appendChild(thReq);
 
       tableEl.hidden = false;
     }
@@ -529,20 +557,19 @@ headersRow.appendChild(thReq);
           tr.appendChild(td);
         }
 
-const tdReq = document.createElement('td');
-const btn = document.createElement('button');
-btn.type = "button";
-btn.textContent = "Download";
-btn.className = "request-btn";
-btn.addEventListener('click', () => startDownload(item.srcIndex));
-tdReq.appendChild(btn);
-tr.appendChild(tdReq);
+        const tdReq = document.createElement('td');
+        const btn = document.createElement('button');
+        btn.type = "button";
+        btn.textContent = "Download";
+        btn.className = "request-btn";
+        btn.addEventListener('click', () => startDownload(item.srcIndex));
+        tdReq.appendChild(btn);
+        tr.appendChild(tdReq);
 
         tbody.appendChild(tr);
       }
     }
 
-    // ---------- CSV parser ----------
     function parseCSV(text) {
       const rows = [];
       let row = [];
