@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Library</title>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    .row { margin: 0.75rem 0; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #ccc; padding: 0.35rem; text-align: left; vertical-align: top; }
+    th { background: #eee; }
+    input, button { font-size: 1rem; padding: 0.35rem; }
+    input[type="search"] { width: 100%; max-width: 560px; }
+    #status { margin-top: 0.5rem; }
+    details { max-width: 900px; }
+    .small { font-size: 0.95rem; }
+    .request-btn { margin-left: 0.5rem; }
+
+    /* Skip link (keyboard + screen reader friendly) */
+    #skipLink { position: absolute; left: -9999px; top: 0; background: #fff; border: 2px solid #000; padding: 0.5rem; }
+    #skipLink:focus { left: 0.5rem; top: 0.5rem; }
+
+    /* Neutral login gate */
+    #gate { max-width: 420px; }
+    #gate input[type="password"] { width: 100%; max-width: 420px; }
+    #app { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- Neutral gate -->
+<div id="gate" class="row">
+  <label for="pw"><strong>Password:</strong></label><br>
+  <input id="pw" type="password" autocomplete="current-password" />
+  <button id="pwBtn" type="button">Enter</button>
+  <div id="gateStatus" class="row" aria-live="polite"></div>
+</div>
+
+<!-- App (hidden until authenticated) -->
+<div id="app">
+  <a href="#search" id="skipLink">Skip to search</a>
+
+  <h1>Audiobook Database</h1>
+
+  <div class="row">
+    <button id="loadBtn" type="button">Load database</button>
+    <button id="browseAllBtn" type="button" disabled>Browse all</button>
+  </div>
+
+  <div class="row small">
+    <div><strong>Page URL:</strong> <span id="pageUrl"></span></div>
+    <div><strong>Protocol:</strong> <span id="pageProto"></span></div>
+    <div><strong>Auto-load target:</strong> <span id="autoTarget"></span></div>
+  </div>
+
+  <details class="row" id="pickerPanel">
+    <summary>Having trouble loading? Use the CSV file picker</summary>
+    <div class="row">
+      <label for="csvFile"><strong>Choose audiobooks.csv:</strong></label><br>
+      <input id="csvFile" type="file" accept=".csv,text/csv" />
+    </div>
+  </details>
+
+  <div class="row">
+    <label for="search"><strong>Search:</strong></label><br>
+    <input id="search" type="search" placeholder="Type and press Enter, or click Search" disabled />
+    <button id="searchBtn" type="button" disabled>Search</button>
+    <button id="clearBtn" type="button" disabled>Clear</button>
+  </div>
+
+  <div id="status" aria-live="polite">Ready. Click “Load database”.</div>
+
+  <table id="table" hidden>
+    <thead><tr id="headers"></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<script>
+  // =========================
+  // PASSWORD WALL SETTINGS
+  // =========================
+  // CHANGE THIS to your shared password:
+  const ACCESS_PASSWORD = "Gershwin's-Collarbone88";
+
+  // If set, login persists until you clear browser data (recommended for your use-case).
+  const PERSIST_KEY = "abl_access_ok";
+
+  function hasAccess() {
+    try { return localStorage.getItem(PERSIST_KEY) === "1"; } catch(e) { return false; }
+  }
+  function grantAccess() {
+    try { localStorage.setItem(PERSIST_KEY, "1"); } catch(e) {}
+  }
+
+  const gateEl = document.getElementById("gate");
+  const appEl = document.getElementById("app");
+  const pwEl = document.getElementById("pw");
+  const pwBtn = document.getElementById("pwBtn");
+  const gateStatus = document.getElementById("gateStatus");
+
+  function showApp() {
+    gateEl.style.display = "none";
+    appEl.style.display = "block";
+  }
+
+  function showGate(msg) {
+    gateEl.style.display = "block";
+    appEl.style.display = "none";
+    gateStatus.textContent = msg || "";
+    setTimeout(() => pwEl.focus(), 50);
+  }
+
+  function tryLogin() {
+    const entered = (pwEl.value || "").trim();
+    if (!entered) {
+      gateStatus.textContent = "Enter password.";
+      return;
+    }
+    if (entered === ACCESS_PASSWORD) {
+      grantAccess();
+      showApp();
+      // start the app after unlock
+      startApp();
+    } else {
+      gateStatus.textContent = "Incorrect.";
+      pwEl.value = "";
+      setTimeout(() => pwEl.focus(), 50);
+    }
+  }
+
+  pwBtn.addEventListener("click", tryLogin);
+  pwEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      tryLogin();
+    }
+  });
+
+  // If already authenticated, skip the gate
+  if (hasAccess()) {
+    showApp();
+    startApp();
+  } else {
+    showGate("");
+  }
+
+  // =========================
+  // APP CODE (unchanged core)
+  // =========================
+  function startApp() {
+    // ---------- Dropbox CSV URL ----------
+    // Using the direct raw domain works best for iOS fetch.
+    const DROPBOX_CSV_URL =
+      "https://dl.dropboxusercontent.com/scl/fi/dn97ausyuzcpck30mgn7r/audiobooks.csv?rlkey=jtirb9npkwoll9xpn0vgdtcjg&st=hgkkigmx&dl=1";
+const BACKEND_BASE_URL = "http://127.0.0.1:8123";
+
+    // Elements
+    const loadBtn = document.getElementById('loadBtn');
+    const browseAllBtn = document.getElementById('browseAllBtn');
+    const fileInput = document.getElementById('csvFile');
+    const pickerPanel = document.getElementById('pickerPanel');
+
+    const searchInput = document.getElementById('search');
+    const searchBtn = document.getElementById('searchBtn');
+    const clearBtn = document.getElementById('clearBtn');
+
+    const statusEl = document.getElementById('status');
+    const tableEl = document.getElementById('table');
+    const headersRow = document.getElementById('headers');
+    const tbody = document.getElementById('rows');
+
+    const pageUrlEl = document.getElementById('pageUrl');
+    const pageProtoEl = document.getElementById('pageProto');
+    const autoTargetEl = document.getElementById('autoTarget');
+
+    pageUrlEl.textContent = window.location.href;
+    pageProtoEl.textContent = window.location.protocol;
+
+    function isIOS() {
+      const ua = navigator.userAgent || "";
+      const iOSDevice = /iPad|iPhone|iPod/.test(ua);
+      const iPadOS = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      return iOSDevice || iPadOS;
+    }
+
+    function isLocalhost() {
+      const h = (window.location.hostname || "").toLowerCase();
+      return h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "::1";
+    }
+
+    function getAutoLoadTargetText() {
+      if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+        if (isLocalhost()) return "Local server: ./audiobooks.csv";
+        return "Dropbox: audiobooks.csv";
+      }
+      // file://
+      if (isIOS()) return "Dropbox: audiobooks.csv";
+      return "Manual picker required (file://)";
+    }
+
+    autoTargetEl.textContent = getAutoLoadTargetText();
+
+    // Raw parsed data
+    let ALL_HEADERS = [];
+    let ALL_ROWS = [];
+
+    // Indices for fast lookup (Request button)
+    let IDX_BOOKID = -1;
+    let IDX_AUTHOR = -1;
+    let IDX_TITLE  = -1;
+
+    // Display map: { srcIndex, cells, rawLower }
+    let DISPLAY_MAP = [];
+
+    // Desired columns
+    const DESIRED_COLUMNS = [
+      "Author",
+      "CategoryOrSeries",
+      "BookNumber",
+      "Title",
+      "Narrator",
+      "Year",
+      "Parts",
+      "Duration"
+    ];
+
+    // ---------- Loading ----------
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    async function fetchTextWithRetry(url) {
+      const attempts = 12;
+      const delayMs = 250;
+      let lastErr = null;
+
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const response = await fetch(url, { cache: 'no-store' });
+          if (!response.ok) throw new Error('HTTP ' + response.status + ' while fetching ' + url);
+          return await response.text();
+        } catch (err) {
+          lastErr = err;
+          await sleep(delayMs);
+        }
+      }
+      throw lastErr || new Error("Unknown fetch error");
+    }
+
+    async function loadFromAutoTarget() {
+      // Allow iOS even in file://, because it can still fetch HTTPS.
+      if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') {
+        if (!isIOS()) {
+          throw new Error("This page is not running over HTTP/HTTPS. Auto-load is blocked when opened as file:///.");
+        }
+        // iOS file:/// mode: still fetch Dropbox CSV
+        return await fetchTextWithRetry(DROPBOX_CSV_URL);
+      }
+
+      if (!isLocalhost()) {
+        return await fetchTextWithRetry(DROPBOX_CSV_URL);
+      }
+
+      return await fetchTextWithRetry('./audiobooks.csv');
+    }
+
+    async function loadFromFilePicker(file) {
+      return await file.text();
+    }
+
+    function enableUIAfterLoad() {
+      tableEl.hidden = false;
+      searchInput.disabled = false;
+      searchBtn.disabled = false;
+      clearBtn.disabled = false;
+      browseAllBtn.disabled = false;
+    }
+
+    function requireColumnIndices(headers) {
+      const indexByName = new Map();
+      headers.forEach((h, i) => indexByName.set(h, i));
+
+      // Required for request system
+      IDX_BOOKID = indexByName.has("BookId") ? indexByName.get("BookId") : -1;
+      IDX_AUTHOR = indexByName.has("Author") ? indexByName.get("Author") : -1;
+      IDX_TITLE  = indexByName.has("Title")  ? indexByName.get("Title")  : -1;
+
+      if (IDX_BOOKID < 0) throw new Error("CSV is missing required column: BookId");
+      if (IDX_AUTHOR < 0) throw new Error("CSV is missing required column: Author");
+      if (IDX_TITLE  < 0) throw new Error("CSV is missing required column: Title");
+
+      const indices = [];
+      const missing = [];
+
+      for (const name of DESIRED_COLUMNS) {
+        if (!indexByName.has(name)) missing.push(name);
+        else indices.push(indexByName.get(name));
+      }
+
+      if (missing.length) {
+        throw new Error("CSV is missing expected columns: " + missing.join(", "));
+      }
+
+      return indices;
+    }
+
+    function formatParts(value) {
+      const v = (value ?? "").toString().trim();
+      if (!v) return "";
+      if (/\bparts\b/i.test(v)) return v;
+      return v + " parts";
+    }
+
+    function formatDurationHMS(value) {
+      const v = (value ?? "").toString().trim();
+      if (!v) return "";
+
+      const m = v.match(/^(\d+):([0-5]\d):([0-5]\d)$/);
+      if (!m) return v;
+
+      const hours = parseInt(m[1], 10);
+      const minutes = parseInt(m[2], 10);
+      const seconds = parseInt(m[3], 10);
+
+      return `${hours} hours, ${minutes} minutes, ${seconds} seconds`;
+    }
+
+    function buildDisplayMap(allHeaders, allRows) {
+      const desiredIndices = requireColumnIndices(allHeaders);
+
+      DISPLAY_MAP = allRows.map((r, srcIndex) => {
+        const cells = desiredIndices.map(idx => (r[idx] ?? "").toString());
+
+        const partsIdx = DESIRED_COLUMNS.indexOf("Parts");
+        const durIdx   = DESIRED_COLUMNS.indexOf("Duration");
+        if (partsIdx >= 0) cells[partsIdx] = formatParts(cells[partsIdx]);
+        if (durIdx   >= 0) cells[durIdx]   = formatDurationHMS(cells[durIdx]);
+
+        const rawLower = cells.join(" \u001F ").toLowerCase();
+        return { srcIndex, cells, rawLower };
+      });
+    }
+
+    async function loadDatabaseFromText(text) {
+      statusEl.textContent = "Parsing database...";
+      tableEl.setAttribute("aria-busy", "true");
+
+      const parsed = parseCSV(text);
+      if (!parsed.headers.length) throw new Error('CSV headers not found.');
+
+      ALL_HEADERS = parsed.headers;
+      ALL_ROWS = parsed.rows;
+
+      statusEl.textContent = "Preparing display fields...";
+      buildDisplayMap(ALL_HEADERS, ALL_ROWS);
+
+      statusEl.textContent = "Building table headers...";
+      renderHeaders();
+      clearTableRows();
+
+      enableUIAfterLoad();
+      tableEl.removeAttribute("aria-busy");
+
+      statusEl.textContent = `Loaded ${DISPLAY_MAP.length} records. Enter a search term, or click “Browse all”.`;
+
+      // JAWS focus smoothing
+      setTimeout(() => {
+        searchInput.focus();
+        statusEl.textContent = "Database loaded. Focus is on the Search box.";
+      }, 300);
+
+      pickerPanel.open = false;
+    }
+
+    async function tryAutoLoad() {
+      statusEl.textContent = "Loading database...";
+      try {
+        const text = await loadFromAutoTarget();
+        await loadDatabaseFromText(text);
+      } catch (err) {
+        statusEl.textContent =
+          "Auto-load failed. Use the CSV file picker below. Reason: " + err.message;
+        pickerPanel.open = true;
+        setTimeout(() => fileInput.focus(), 150);
+      }
+    }
+
+    // bind once
+    loadBtn.onclick = tryAutoLoad;
+
+    fileInput.onchange = async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+
+      statusEl.textContent = `Loading: ${file.name} ...`;
+      try {
+        const text = await loadFromFilePicker(file);
+        await loadDatabaseFromText(text);
+      } catch (err) {
+        statusEl.textContent = "Error loading CSV: " + err.message;
+      }
+    };
+
+    // Auto-attempt on app start
+    // - HTTP/HTTPS: always attempt
+    // - file:// on iOS: attempt (Dropbox/Safari viewer)
+    // - file:// elsewhere: show picker
+    (function initialLoad() {
+      const proto = window.location.protocol;
+      if (proto === 'http:' || proto === 'https:') {
+        tryAutoLoad();
+      } else {
+        if (isIOS()) {
+          tryAutoLoad();
+        } else {
+          pickerPanel.open = true;
+          statusEl.textContent = "Opened as a local file (file:///). Auto-load is blocked. Use the CSV picker to choose audiobooks.csv.";
+          setTimeout(() => fileInput.focus(), 150);
+        }
+      }
+    })();
+
+    // ---------- Request download ----------
+    function safeFileName(s) {
+      return (s ?? "").toString()
+        .replace(/[\\/:*?"<>|]+/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 160);
+    }
+
+function startDownload(srcIndex) {
+  const row = ALL_ROWS[srcIndex];
+
+  const author = (row[IDX_AUTHOR] ?? "").toString().trim();
+  const title  = (row[IDX_TITLE]  ?? "").toString().trim();
+  const bookId = (row[IDX_BOOKID] ?? "").toString().trim();
+
+  if (!bookId) {
+    statusEl.textContent = "This book does not have a valid BookId.";
+    return;
+  }
+
+  statusEl.textContent =
+    `Preparing download for ${author} - ${title}. Large books may take a short while before the download begins.`;
+
+  window.location.href = `${BACKEND_BASE_URL}/download/${encodeURIComponent(bookId)}`;
+}
+
+    // ---------- Searching / Browsing ----------
+    function applySearch() {
+      const q = searchInput.value.trim().toLowerCase();
+      if (!q) {
+        clearTableRows();
+        statusEl.textContent = `No search entered. Enter a search term, or click “Browse all”.`;
+        return;
+      }
+
+      statusEl.textContent = "Searching...";
+      tableEl.setAttribute("aria-busy", "true");
+
+      const filtered = [];
+      for (const item of DISPLAY_MAP) {
+        if (item.rawLower.includes(q)) filtered.push(item);
+      }
+
+      renderRows(filtered);
+      tableEl.removeAttribute("aria-busy");
+      statusEl.textContent = `Found ${filtered.length} match(es) for: "${searchInput.value.trim()}"`;
+    }
+
+    searchBtn.onclick = applySearch;
+
+    searchInput.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        applySearch();
+      }
+    };
+
+    clearBtn.onclick = () => {
+      searchInput.value = '';
+      clearTableRows();
+      statusEl.textContent = `Cleared. Enter a search term, or click “Browse all”.`;
+      searchInput.focus();
+    };
+
+    browseAllBtn.onclick = () => {
+      statusEl.textContent = "Rendering all records...";
+      tableEl.setAttribute("aria-busy", "true");
+
+      setTimeout(() => {
+        renderRows(DISPLAY_MAP);
+        tableEl.removeAttribute("aria-busy");
+        statusEl.textContent = `Showing all ${DISPLAY_MAP.length} records.`;
+      }, 0);
+    };
+
+    // ---------- Rendering ----------
+    function renderHeaders() {
+      headersRow.innerHTML = '';
+      for (const h of DESIRED_COLUMNS) {
+        const th = document.createElement('th');
+        th.textContent = h;
+        th.scope = "col";
+        headersRow.appendChild(th);
+      }
+
+const thReq = document.createElement('th');
+thReq.textContent = "Download";
+thReq.scope = "col";
+headersRow.appendChild(thReq);
+
+      tableEl.hidden = false;
+    }
+
+    function clearTableRows() {
+      tbody.innerHTML = '';
+    }
+
+    function renderRows(items) {
+      tbody.innerHTML = '';
+      for (const item of items) {
+        const tr = document.createElement('tr');
+
+        for (let i = 0; i < DESIRED_COLUMNS.length; i++) {
+          const td = document.createElement('td');
+          td.textContent = item.cells[i] ?? '';
+          tr.appendChild(td);
+        }
+
+const tdReq = document.createElement('td');
+const btn = document.createElement('button');
+btn.type = "button";
+btn.textContent = "Download";
+btn.className = "request-btn";
+btn.addEventListener('click', () => startDownload(item.srcIndex));
+tdReq.appendChild(btn);
+tr.appendChild(tdReq);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    // ---------- CSV parser ----------
+    function parseCSV(text) {
+      const rows = [];
+      let row = [];
+      let cur = '';
+      let inQuotes = false;
+
+      text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+
+        if (c === '"') {
+          const next = text[i + 1];
+          if (inQuotes && next === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (c === ',' && !inQuotes) {
+          row.push(cur);
+          cur = '';
+        } else if (c === '\n' && !inQuotes) {
+          row.push(cur);
+          cur = '';
+          if (row.length > 1 || (row.length === 1 && row[0].trim() !== '')) {
+            rows.push(row);
+          }
+          row = [];
+        } else {
+          cur += c;
+        }
+      }
+
+      if (cur.length || row.length) {
+        row.push(cur);
+        if (row.length > 1 || (row.length === 1 && row[0].trim() !== '')) {
+          rows.push(row);
+        }
+      }
+
+      const headers = (rows.shift() || []).map(s => s.trim());
+      const dataRows = rows.map(r => {
+        const out = r.slice(0, headers.length);
+        while (out.length < headers.length) out.push('');
+        return out;
+      });
+
+      return { headers, rows: dataRows };
+    }
+  }
+</script>
+
+</body>
+</html>
